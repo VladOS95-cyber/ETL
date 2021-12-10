@@ -1,0 +1,8 @@
+black
+dataclasses-json
+elasticsearch
+isort
+psycopg2
+python-dotenv
+pydantic
+schedule
