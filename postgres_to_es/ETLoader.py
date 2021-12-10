@@ -34,6 +34,7 @@ def load_data():
     es = Elasticsearch(
         ["http://127.0.0.1"], http_auth=("elastic", "changeme"), port=9200
     )
+
     postgre_film_work_data = download_postgre_data("film_work")
     film_work_is_uploaded = upload_to_elastic(postgre_film_work_data, es)
     if film_work_is_uploaded is True:
@@ -45,7 +46,7 @@ def load_data():
     if person_is_uploaded is True:
         logger.info("Creation person_state")
         state_control.set_state("person", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-
+    
     genre_film_work_data = download_postgre_data("genre")
     genre_is_uploaded = upload_to_elastic(genre_film_work_data, es)
     if genre_is_uploaded is True:
@@ -73,6 +74,7 @@ def upload_to_elastic(postgre_data, es):
         logger.info("Uploading data into elastic index")
         helpers.bulk(es, data)
     return True
+
 
 if __name__ == "__main__":
     logger.info("Start ETL service")
