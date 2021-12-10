@@ -35,17 +35,22 @@ def load_data():
         ["http://127.0.0.1"], http_auth=("elastic", "changeme"), port=9200
     )
     postgre_film_work_data = download_postgre_data("film_work")
-    upload_to_elastic(postgre_film_work_data, es)
-    logger.info("Creation film_work_state")
-    state_control.set_state("film_work", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    film_work_is_uploaded = upload_to_elastic(postgre_film_work_data, es)
+    if film_work_is_uploaded is True:
+        logger.info("Creation film_work_state")
+        state_control.set_state("film_work", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
     postgre_person_data = download_postgre_data("person")
-    upload_to_elastic(postgre_person_data, es)
-    logger.info("Creation person_state")
-    state_control.set_state("person", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    person_is_uploaded = upload_to_elastic(postgre_person_data, es)
+    if person_is_uploaded is True:
+        logger.info("Creation person_state")
+        state_control.set_state("person", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
     genre_film_work_data = download_postgre_data("genre")
-    upload_to_elastic(genre_film_work_data, es)
-    logger.info("Creation genre_state")
-    state_control.set_state("genre", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    genre_is_uploaded = upload_to_elastic(genre_film_work_data, es)
+    if genre_is_uploaded is True:
+        logger.info("Creation genre_state")
+        state_control.set_state("genre", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
 @backoff()
@@ -60,14 +65,14 @@ def upload_to_elastic(postgre_data, es):
         records = data_transform(data)
         if records is None:
             logger.info("No fresh data in db")
-            break
+            return False
         data = [
             {"_index": "movies", "_id": record.id, "_source": record.json()}
             for record in records
         ]
         logger.info("Uploading data into elastic index")
         helpers.bulk(es, data)
-
+    return True
 
 if __name__ == "__main__":
     logger.info("Start ETL service")
