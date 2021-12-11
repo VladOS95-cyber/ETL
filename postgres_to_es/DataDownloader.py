@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 from ETLCondition import JsonFileStorage, State
 from Utils import app_logger
@@ -25,42 +26,19 @@ class FilmWorkExtractor:
 
     def extract_film_work_data(self, connection):
         cursor = connection.cursor()
-        offset = 0
-        limit = 100
         query = f"""SELECT
-        fw.id as id,
-        fw.rating as imdb_rating,
-        ARRAY_AGG(DISTINCT g.name ) AS genre,
-        fw.title as title,
-        fw.description as description,
-        ARRAY_AGG(DISTINCT p.full_name )
-            FILTER ( WHERE pfw.role = 'director' ) AS director,
-        ARRAY_AGG(DISTINCT p.full_name)
-            FILTER ( WHERE pfw.role = 'actor' ) AS actors_names,
-        ARRAY_AGG(DISTINCT p.full_name)
-            FILTER ( WHERE pfw.role = 'writer' ) AS writers_names,
-        ARRAY_AGG(DISTINCT CONCAT (p.id, ',', p.full_name))
-            FILTER ( WHERE pfw.role = 'actor' ) AS actors,
-        ARRAY_AGG(DISTINCT CONCAT (p.id, ',', p.full_name))
-            FILTER ( WHERE pfw.role = 'writer' ) AS writers
-        FROM content.film_work fw
-        LEFT JOIN content.person_film_work pfw ON pfw.film_work_id = fw.id
-        LEFT JOIN content.person p ON p.id = pfw.person_id
-        LEFT JOIN content.genre_film_work gfw ON gfw.film_work_id = fw.id
-        LEFT JOIN content.genre g ON g.id = gfw.genre_id
-        WHERE fw.updated_at > '{film_work_date}'
-        GROUP BY fw.id
-        LIMIT {limit}
-        OFFSET {offset};"""
-        while True:
-            cursor.execute(query)
-            record = cursor.fetchall()
-            if record:
-                yield record
-                offset += limit
-            else:
-                cursor.close()
-                break
+        id, updated_at
+        FROM content.film_work
+        WHERE updated_at > '{film_work_date}';"""
+        cursor.execute(query)
+        record = cursor.fetchall()
+        if record:
+            state_control.set_state(
+                "film_work", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
+            return [r.get("id") for r in record]
+        else:
+            cursor.close()
 
 
 class PersonExtractor:
@@ -68,88 +46,38 @@ class PersonExtractor:
         self.pg_connection = pg_connection
 
     def extract_fresh_persons(self, connection):
-        limit = 100
-        offset = 0
         query = f"""SELECT id, updated_at
         FROM content.person
         WHERE updated_at > '{person_date}'
-        ORDER BY updated_at
-        LIMIT {limit}
-        OFFSET {offset};"""
-        while True:
-            cursor = connection.cursor()
-            cursor.execute(query)
-            record = cursor.fetchall()
-            if record:
-                yield record
-                offset += limit
-            else:
-                break
+        ORDER BY updated_at;"""
+        cursor = connection.cursor()
+        cursor.execute(query)
+        record = cursor.fetchall()
+        if record:
+            state_control.set_state(
+                "person", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
+            return [r.get("id") for r in record]
+        else:
+            cursor.close()
+            return []
 
-    def extract_persons_in_films_participation(self, connection, person_ids):
-        limit = 100
-        offset = 0
+    def extract_persons_in_films_participation(self, connection):
+        fresh_persons = tuple(self.extract_fresh_persons(connection))
+        if len(fresh_persons) == 0:
+            return
         query = f"""SELECT fw.id, fw.updated_at
         FROM content.film_work fw
         LEFT JOIN content.person_film_work pfw ON pfw.film_work_id = fw.id
-        WHERE pfw.person_id IN ({person_ids})
-        ORDER BY fw.updated_at
-        LIMIT {limit}
-        OFFSET {offset};"""
-        while True:
-            cursor = connection.cursor()
-            cursor.execute(query)
-            record = cursor.fetchall()
-            if record:
-                yield record
-                offset += limit
-            else:
-                break
-
-    def extract_final_person_data(self, connection):
+        WHERE pfw.person_id IN {fresh_persons}
+        ORDER BY fw.updated_at;"""
         cursor = connection.cursor()
-        offset = 0
-        limit = 100
-        for person_ids in self.extract_fresh_persons(connection):
-            ids_person = ", ".join(f"'{ids_p.get('id')}'" for ids_p in person_ids)
-            for person_film in self.extract_persons_in_films_participation(
-                connection, ids_person
-            ):
-                ids = ", ".join(f"'{ids_fwp.get('id')}'" for ids_fwp in person_film)
-                query = f"""SELECT
-                fw.id as id,
-                fw.rating as imdb_rating,
-                ARRAY_AGG(DISTINCT g.name ) AS genre,
-                fw.title as title,
-                fw.description as description,
-                ARRAY_AGG(DISTINCT p.full_name )
-                    FILTER ( WHERE pfw.role = 'director' ) AS director,
-                ARRAY_AGG(DISTINCT p.full_name)
-                    FILTER ( WHERE pfw.role = 'actor' ) AS actors_names,
-                ARRAY_AGG(DISTINCT p.full_name)
-                    FILTER ( WHERE pfw.role = 'writer' ) AS writers_names,
-                ARRAY_AGG(DISTINCT CONCAT (p.id, ',', p.full_name))
-                    FILTER ( WHERE pfw.role = 'actor' ) AS actors,
-                ARRAY_AGG(DISTINCT CONCAT (p.id, ',', p.full_name))
-                    FILTER ( WHERE pfw.role = 'writer' ) AS writers
-                FROM content.film_work fw
-                LEFT JOIN content.person_film_work pfw ON pfw.film_work_id = fw.id
-                LEFT JOIN content.person p ON p.id = pfw.person_id
-                LEFT JOIN content.genre_film_work gfw ON gfw.film_work_id = fw.id
-                LEFT JOIN content.genre g ON g.id = gfw.genre_id
-                WHERE fw.id IN ({ids})
-                GROUP BY fw.id
-                LIMIT {limit}
-                OFFSET {offset};"""
-                while True:
-                    cursor.execute(query)
-                    record = cursor.fetchall()
-                    if record:
-                        yield record
-                        offset += limit
-                    else:
-                        cursor.close()
-                        break
+        cursor.execute(query)
+        record = cursor.fetchall()
+        if record:
+            return [r.get("id") for r in record]
+        else:
+            cursor.close()
 
 
 class GenreExtractor:
@@ -157,101 +85,96 @@ class GenreExtractor:
         self.pg_connection = pg_connection
 
     def extract_fresh_genres(self, connection):
-        limit = 100
-        offset = 0
         query = f"""SELECT id, updated_at
         FROM content.genre
         WHERE updated_at > '{genre_date}'
-        ORDER BY updated_at
-        LIMIT {limit}
-        OFFSET {offset};"""
-        while True:
-            cursor = connection.cursor()
-            cursor.execute(query)
-            record = cursor.fetchall()
-            if record:
-                yield record
-                offset += limit
-            else:
-                break
+        ORDER BY updated_at;"""
+        cursor = connection.cursor()
+        cursor.execute(query)
+        record = cursor.fetchall()
+        if record:
+            state_control.set_state(
+                "genre", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
+            return [r.get("id") for r in record]
+        else:
+            cursor.close()
+            return []
 
-    def extract_genres_in_films(self, connection, person_ids):
-        limit = 100
-        offset = 0
+    def extract_genres_in_films(self, connection):
+        fresh_genres = tuple(self.extract_fresh_genres(connection))
+        if len(fresh_genres) == 0:
+            return
         query = f"""SELECT fw.id, fw.updated_at
         FROM content.film_work fw
         LEFT JOIN content.genre_film_work pfw ON pfw.film_work_id = fw.id
-        WHERE pfw.genre_id IN ({person_ids})
-        ORDER BY fw.updated_at
-        LIMIT {limit}
-        OFFSET {offset};"""
-        while True:
-            cursor = connection.cursor()
-            cursor.execute(query)
-            record = cursor.fetchall()
-            if record:
-                yield record
-                offset += limit
-            else:
-                break
-
-    def extract_final_genre_data(self, connection):
+        WHERE pfw.genre_id IN {fresh_genres}
+        ORDER BY fw.updated_at;"""
         cursor = connection.cursor()
-        offset = 0
-        limit = 100
-        for genre_ids in self.extract_fresh_genres(connection):
-            ids_genre = ", ".join(f"'{ids_g.get('id')}'" for ids_g in genre_ids)
-            for genre_film in self.extract_genres_in_films(connection, ids_genre):
-                ids = ", ".join(f"'{ids_fwg.get('id')}'" for ids_fwg in genre_film)
-                query = f"""SELECT
-                fw.id as id,
-                fw.rating as imdb_rating,
-                ARRAY_AGG(DISTINCT g.name ) AS genre,
-                fw.title as title,
-                fw.description as description,
-                ARRAY_AGG(DISTINCT p.full_name )
-                    FILTER ( WHERE pfw.role = 'director' ) AS director,
-                ARRAY_AGG(DISTINCT p.full_name)
-                    FILTER ( WHERE pfw.role = 'actor' ) AS actors_names,
-                ARRAY_AGG(DISTINCT p.full_name)
-                    FILTER ( WHERE pfw.role = 'writer' ) AS writers_names,
-                ARRAY_AGG(DISTINCT CONCAT (p.id, ',', p.full_name))
-                    FILTER ( WHERE pfw.role = 'actor' ) AS actors,
-                ARRAY_AGG(DISTINCT CONCAT (p.id, ',', p.full_name))
-                    FILTER ( WHERE pfw.role = 'writer' ) AS writers
-                FROM content.film_work fw
-                LEFT JOIN content.person_film_work pfw ON pfw.film_work_id = fw.id
-                LEFT JOIN content.person p ON p.id = pfw.person_id
-                LEFT JOIN content.genre_film_work gfw ON gfw.film_work_id = fw.id
-                LEFT JOIN content.genre g ON g.id = gfw.genre_id
-                WHERE fw.id IN ({ids})
-                GROUP BY fw.id
-                LIMIT {limit}
-                OFFSET {offset};"""
-                while True:
-                    cursor.execute(query)
-                    record = cursor.fetchall()
-                    if record:
-                        yield record
-                        offset += limit
-                    else:
-                        cursor.close()
-                        break
+        cursor.execute(query)
+        record = cursor.fetchall()
+        if record:
+            return [r.get("id") for r in record]
+        else:
+            cursor.close()
 
 
-def extract_postgre_data(connection, extractor_name):
-    if extractor_name == "film_work":
-        logger.info("Start extraction film_work data")
-        film_work_extractor = FilmWorkExtractor(connection)
-        for data in film_work_extractor.extract_film_work_data(connection):
-            yield data
-    elif extractor_name == "genre":
-        logger.info("Start extraction genre data")
-        genre_extractor = GenreExtractor(connection)
-        for data in genre_extractor.extract_final_genre_data(connection):
-            yield data
-    else:
-        logger.info("Start extraction person data")
-        person_extractor = PersonExtractor(connection)
-        for data in person_extractor.extract_final_person_data(connection):
-            yield data
+def extract_all_final_data(connection, film_ids):
+    final_data = []
+    if len(film_ids) == 0:
+        return
+    cursor = connection.cursor()
+    query = f"""SELECT
+            fw.id as id,
+            fw.rating as imdb_rating,
+            ARRAY_AGG(DISTINCT g.name ) AS genre,
+            fw.title as title,
+            fw.description as description,
+            ARRAY_AGG(DISTINCT p.full_name )
+                FILTER ( WHERE pfw.role = 'director' ) AS director,
+            ARRAY_AGG(DISTINCT p.full_name)
+                FILTER ( WHERE pfw.role = 'actor' ) AS actors_names,
+            ARRAY_AGG(DISTINCT p.full_name)
+                FILTER ( WHERE pfw.role = 'writer' ) AS writers_names,
+            ARRAY_AGG(DISTINCT CONCAT (p.id, ',', p.full_name))
+                FILTER ( WHERE pfw.role = 'actor' ) AS actors,
+            ARRAY_AGG(DISTINCT CONCAT (p.id, ',', p.full_name))
+                FILTER ( WHERE pfw.role = 'writer' ) AS writers
+            FROM content.film_work fw
+            LEFT JOIN content.person_film_work pfw ON pfw.film_work_id = fw.id
+            LEFT JOIN content.person p ON p.id = pfw.person_id
+            LEFT JOIN content.genre_film_work gfw ON gfw.film_work_id = fw.id
+            LEFT JOIN content.genre g ON g.id = gfw.genre_id
+            WHERE fw.id IN {tuple(film_ids)}
+            GROUP BY fw.id;"""
+    cursor.execute(query)
+    while record := cursor.fetchmany(100):
+        final_data.append([rec for rec in record])
+    cursor.close()
+    return final_data
+
+
+def extract_postgre_data(connection):
+    unique_changed_films_ids = set()
+
+    film_work_extractor = FilmWorkExtractor(connection)
+    film_work_data = film_work_extractor.extract_film_work_data(connection)
+    if film_work_data is not None:
+        for ids in film_work_data:
+            unique_changed_films_ids.add(ids)
+
+    genre_extractor = GenreExtractor(connection)
+    genre_data = genre_extractor.extract_genres_in_films(connection)
+    if genre_data is not None:
+        for ids in genre_data:
+            unique_changed_films_ids.add(ids)
+
+    person_extractor = PersonExtractor(connection)
+    person_data = person_extractor.extract_persons_in_films_participation(connection)
+    if person_data is not None:
+        for ids in person_data:
+            unique_changed_films_ids.add(ids)
+
+    final_data = extract_all_final_data(connection, unique_changed_films_ids)
+
+    return final_data

@@ -2,6 +2,7 @@ import time
 from functools import wraps
 
 import psycopg2
+
 from Utils import app_logger
 
 logger = app_logger.get_logger(__name__)
