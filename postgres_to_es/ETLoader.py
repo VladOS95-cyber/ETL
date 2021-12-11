@@ -17,15 +17,21 @@ CONFIG_FILE_PATH = os.path.join(BASE_DIR, "config.json")
 STORAGE_FILE = "state_storage.json"
 CONFIG = Config.parse_file(CONFIG_FILE_PATH)
 POSTGRE_DB_DSN = dict(CONFIG.film_work_pg.dsn)
+ELASTIC_SETTINGS = dict(CONFIG.film_work_pg.elastic)
 
 logger = app_logger.get_logger(__name__)
 
 
 def load_data():
     es = Elasticsearch(
-        ["http://127.0.0.1"], http_auth=("elastic", "changeme"), port=9200
+        [ELASTIC_SETTINGS["http"]],
+        http_auth=(ELASTIC_SETTINGS["user_name"], ELASTIC_SETTINGS["password"]),
+        port=ELASTIC_SETTINGS["port"],
     )
     postgre_data = download_postgre_data()
+    if postgre_data is None:
+        logger.info("No data for upload")
+        return
     for data in postgre_data:
         upload_to_elastic(data, es)
 
@@ -48,6 +54,7 @@ def upload_to_elastic(postgre_data, es):
 
 
 if __name__ == "__main__":
+    load_data()
     logger.info("Start ETL service")
     schedule.every(1).minutes.do(load_data())
 

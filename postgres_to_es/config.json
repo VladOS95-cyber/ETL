@@ -1,5 +1,12 @@
 {
   "film_work_pg": {
+    "elastic": 
+    {
+      "http": "http://127.0.0.1",
+      "user_name": "elastic",
+      "password": "changeme",
+      "port": 9200
+    },
     "dsn": {
       "dbname": "movies",
       "user": "postgres",

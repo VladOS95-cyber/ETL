@@ -12,7 +12,15 @@ class DSNSettings(BaseModel):
     options: str
 
 
+class ElasticSettings(BaseModel):
+    http: str
+    user_name: str
+    password: str
+    port: int
+
+
 class PostgresSettings(BaseModel):
+    elastic: ElasticSettings
     dsn: DSNSettings
     limit: Optional[int]
     order_field: List[str]
