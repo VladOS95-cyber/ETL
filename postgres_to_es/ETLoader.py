@@ -54,7 +54,6 @@ def upload_to_elastic(postgre_data, es):
 
 
 if __name__ == "__main__":
-    load_data()
     logger.info("Start ETL service")
     schedule.every(1).minutes.do(load_data())
 
