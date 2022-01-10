@@ -6,13 +6,13 @@ from Utils import app_logger
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STORAGE_FILE = "state_storage.json"
-
+STORAGE_FILE_PATH = os.path.join(BASE_DIR, STORAGE_FILE)
 
 logger = app_logger.get_logger(__name__)
 
 
 logger.info("State reading")
-state_storage = JsonFileStorage(STORAGE_FILE)
+state_storage = JsonFileStorage(STORAGE_FILE_PATH)
 state_control = State(state_storage)
 film_work_date = state_control.get_state("film_work")
 person_date = state_control.get_state("person")
@@ -54,9 +54,6 @@ class PersonExtractor:
         cursor.execute(query)
         record = cursor.fetchall()
         if record:
-            state_control.set_state(
-                "person", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            )
             return [r.get("id") for r in record]
         else:
             cursor.close()
@@ -93,9 +90,6 @@ class GenreExtractor:
         cursor.execute(query)
         record = cursor.fetchall()
         if record:
-            state_control.set_state(
-                "genre", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            )
             return [r.get("id") for r in record]
         else:
             cursor.close()
@@ -115,6 +109,70 @@ class GenreExtractor:
         record = cursor.fetchall()
         if record:
             return [r.get("id") for r in record]
+        else:
+            cursor.close()
+
+
+class PersonsDataEx:
+    def __init__(self, pg_connection):
+        self.pg_connection = pg_connection
+
+    def extract_persons_data(self, connection, persons_id):
+        if len(persons_id) == 0:
+            return
+        persons_data = []
+        cursor = connection.cursor()
+        query = f"""SELECT
+            p.id as id,
+            p.full_name as full_name,
+            ARRAY_AGG(DISTINCT pfw.role) AS roles,
+            ARRAY_AGG(DISTINCT CONCAT (pfw.film_work_id, ',', fw.title))
+                FILTER ( WHERE pfw.film_work_id = fw.id ) AS films
+            FROM content.person p
+            LEFT JOIN content.person_film_work pfw ON pfw.person_id = p.id
+            LEFT JOIN content.film_work fw ON fw.id = pfw.film_work_id
+            WHERE p.id IN {tuple(persons_id)}
+            GROUP BY p.id;"""
+        cursor.execute(query)
+        record = cursor.fetchall()
+        if record:
+            persons_data.append([rec for rec in record])
+            state_control.set_state(
+                "person", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
+            return persons_data
+        else:
+            cursor.close()
+
+
+class GenresDataEx:
+    def __init__(self, pg_connection):
+        self.pg_connection = pg_connection
+
+    def extract_genres_data(self, connection, genres_id):
+        if len(genres_id) == 0:
+            return
+        genres_data = []
+        cursor = connection.cursor()
+        query = f"""SELECT
+            g.id as id,
+            g.name as name,
+            g.description as description,
+            ARRAY_AGG(DISTINCT CONCAT (gfw.film_work_id, ',', fw.title))
+                FILTER ( WHERE gfw.film_work_id = fw.id ) AS films
+            FROM content.genre g
+            LEFT JOIN content.genre_film_work gfw ON gfw.genre_id = g.id
+            LEFT JOIN content.film_work fw ON fw.id = gfw.film_work_id
+            WHERE g.id IN {tuple(genres_id)}
+            GROUP BY g.id;"""
+        cursor.execute(query)
+        record = cursor.fetchall()
+        if record:
+            genres_data.append([rec for rec in record])
+            state_control.set_state(
+                "genre", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
+            return genres_data
         else:
             cursor.close()
 
@@ -154,7 +212,7 @@ def extract_all_final_data(connection, film_ids):
     return final_data
 
 
-def extract_postgre_data(connection):
+def extract_postgre_data_for_movies_index(connection):
     unique_changed_films_ids = set()
 
     film_work_extractor = FilmWorkExtractor(connection)
@@ -178,3 +236,21 @@ def extract_postgre_data(connection):
     final_data = extract_all_final_data(connection, unique_changed_films_ids)
 
     return final_data
+
+
+def extract_postgres_data_for_persons_index(connection):
+    person_extractor = PersonExtractor(connection)
+    pers_ids = person_extractor.extract_fresh_persons(connection)
+    person_ex = PersonsDataEx(connection)
+    pers_data = person_ex.extract_persons_data(connection, pers_ids)
+    if pers_data is not None:
+        return pers_data
+
+
+def extract_postgres_data_for_genress_index(connection):
+    genre_extractor = GenreExtractor(connection)
+    genr_ids = genre_extractor.extract_fresh_genres(connection)
+    genre_ex = GenresDataEx(connection)
+    genrs_data = genre_ex.extract_genres_data(connection, genr_ids)
+    if genrs_data is not None:
+        return genrs_data

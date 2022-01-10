@@ -2,7 +2,7 @@
   "film_work_pg": {
     "elastic": 
     {
-      "http": "http://127.0.0.1",
+      "host": "es",
       "user_name": "elastic",
       "password": "changeme",
       "port": 9200
@@ -11,7 +11,7 @@
       "dbname": "movies",
       "user": "postgres",
       "password": "postgres",
-      "host": "localhost",
+      "host": "db",
       "port": 5432,
       "options": "-c search_path=content"
     },

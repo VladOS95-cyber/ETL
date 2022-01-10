@@ -8,7 +8,12 @@ class Person(BaseModel):
     name: str
 
 
-class Record(BaseModel):
+class Film(BaseModel):
+    id: str
+    title: str
+
+
+class RecordMovies(BaseModel):
     id: str
     imdb_rating: Union[float, None] = 0.0
     genre: List[str] = []
@@ -19,3 +24,17 @@ class Record(BaseModel):
     writers_names: List[str] = []
     actors: List[Person] = []
     writers: List[Person] = []
+
+
+class RecordPersons(BaseModel):
+    id: str
+    full_name: str
+    roles: List[str] = []
+    films: List[Film] = []
+
+
+class RecordGenres(BaseModel):
+    id: str
+    name: str
+    description: Union[str, None] = ""
+    films: List[Film] = []

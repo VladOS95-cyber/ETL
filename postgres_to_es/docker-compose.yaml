@@ -1,0 +1,22 @@
+services:
+
+  etl:
+    container_name: etl
+    build:
+      context: .
+    networks:
+      - movies_admin_movie_net
+    volumes:
+      - etl:/etl/data
+    depends_on:
+      - redis
+      - es
+      - db
+
+networks:
+  movies_admin_movie_net:
+    external: true
+
+
+volumes:
+  etl:

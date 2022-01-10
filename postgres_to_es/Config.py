@@ -13,7 +13,7 @@ class DSNSettings(BaseModel):
 
 
 class ElasticSettings(BaseModel):
-    http: str
+    host: str
     user_name: str
     password: str
     port: int
