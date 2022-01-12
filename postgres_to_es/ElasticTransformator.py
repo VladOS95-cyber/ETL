@@ -8,8 +8,8 @@ logger = app_logger.get_logger(__name__)
 def data_transform_for_movies(extracted_data):
     records = []
     for row in extracted_data:
-        transformed_actors = _persons_getter(row.get("actors"))
-        transformed_writers = _persons_getter(row.get("writers"))
+        transformed_actors = _persons_and_films_getter(row.get("actors"), person=True)
+        transformed_writers = _persons_and_films_getter(row.get("writers"), person=True)
         try:
             records.append(
                 RecordMovies(
@@ -41,7 +41,7 @@ def data_transform_for_movies(extracted_data):
 def data_transform_for_persons(extracted_data):
     records = []
     for row in extracted_data:
-        transformed_films = _films_getter(row.get("films"))
+        transformed_films = _persons_and_films_getter(row.get("films"), film=True)
         try:
             records.append(
                 RecordPersons(
@@ -60,7 +60,7 @@ def data_transform_for_persons(extracted_data):
 def data_transform_for_genres(extracted_data):
     records = []
     for row in extracted_data:
-        transformed_films = _films_getter(row.get("films"))
+        transformed_films = _persons_and_films_getter(row.get("films"), film=True)
         try:
             records.append(
                 RecordGenres(
@@ -76,21 +76,14 @@ def data_transform_for_genres(extracted_data):
     return records
 
 
-def _films_getter(films_list):
+def _persons_and_films_getter(data_list, person=False, film=False):
     record = []
-    if films_list is None:
+    if data_list is None:
         return record
-    for film in films_list:
-        id_and_title = film.split(",")
-        record.append(Film(id=id_and_title[0], title=id_and_title[1]))
-    return record
-
-
-def _persons_getter(persons_list):
-    record = []
-    if persons_list is None:
-        return record
-    for person in persons_list:
-        id_and_name = person.split(",")
-        record.append(Person(id=id_and_name[0], name=id_and_name[1]))
+    for data in data_list:
+        splitter = data.split(",")
+        if person:
+            record.append(Person(id=splitter[0], name=splitter[1]))
+        if film:
+            record.append(Film(id=splitter[0], title=splitter[1]))
     return record
